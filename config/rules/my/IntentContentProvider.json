@@ -1,0 +1,30 @@
+{
+  "serial_Log": {
+    "SliceMode": true,
+    "traceDepth": 12,
+    "PrimTypeAsTaint": true,
+    "desc": {
+      "name": "IntentContentProvider",
+      "detail": "IntentContentProvider",
+      "category": "IntentContentProvider",
+      "complianceCategory": "IntentContentProvider",
+      "complianceCategoryDetail": "IntentContentProvider",
+      "level": "L1"
+    },
+    "source": {
+      "Return": [
+        "<android.content.Intent: android.os.Parcelable getParcelable*(java.lang.String)>",
+        "<android.os.Bundle: android.os.Parcelable getParcelable*(java.lang.String)>",
+        "<android.content.Intent: * get*Extra(*)>",
+        "<android.os.Bundle: * getString(*)>"
+      ]
+    },
+    "sink": {
+      "<*: * openfile(*)>": {
+        "TaintCheck": [
+          "p*"
+        ]
+      }
+    }
+  }
+}

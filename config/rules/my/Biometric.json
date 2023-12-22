@@ -1,0 +1,27 @@
+{
+  "serial_Log": {
+    "SliceMode": true,
+    "traceDepth": 12,
+    "PrimTypeAsTaint": true,
+    "desc": {
+      "name": "biometric",
+      "detail": "biometric",
+      "category": "biometric",
+      "complianceCategory": "biometric",
+      "complianceCategoryDetail": "biometric",
+      "level": "L1"
+    },
+    "source": {
+      "Return": [
+        "<*: * getString(*)>"
+      ]
+    },
+    "sink": {
+      "<*: * makeText(*)>": {
+        "TaintCheck": [
+          "p*"
+        ]
+      }
+    }
+  }
+}

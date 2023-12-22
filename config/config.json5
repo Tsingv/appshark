@@ -1,12 +1,7 @@
 {
-  //apk to anlayze
-  "apkPath": "/Users/aaa/Downloads/app.apk",
-  //result output directory
-//  "out": "out",
-  //specifies the rules, default is all *.json files in the $rulePath directory
-//  "rules": "unZipSlip.json",
-  //specifies the rule's parent directory, default is ./config/rules
-//  "rulePath": "config/rules"
-  //print more info about this rule
+  "apkPath": "/media/clearain/Workspace/APKs/MicrosoftAuthenticator_6.2311.7496_Apkpure.apk",
+  "out": "out/MicrosoftAuth2",
+//  "rules": "Gatt.json,WebView.json",
+  "rulePath": "config/rules/my"
 //  "debugRule": "unZipSlip"
 }

@@ -1,0 +1,29 @@
+{
+  "serial_Log": {
+    "SliceMode": true,
+    "traceDepth": 12,
+    "PrimTypeAsTaint": true,
+    "desc": {
+      "name": "gatt",
+      "detail": "gatt",
+      "category": "gatt",
+      "complianceCategory": "gatt",
+      "complianceCategoryDetail": "gatt",
+      "level": "L1"
+    },
+    "source": {
+      "Return": [
+        "<*: * write*Characteristic(*)>",
+        "<*: * read*Characteristic(*)>",
+        "<*: * onNotify(*)>"
+      ]
+    },
+    "sink": {
+      "<*: * startActivity*(*)>": {
+        "TaintCheck": [
+          "p*"
+        ]
+      }
+    }
+  }
+}
