@@ -35,6 +35,7 @@ import kotlin.system.exitProcess
 @Serializable
 class Results {
     var AppInfo: AppInfo? = null
+    var ManifestRisk: ManifestRisk? = null
     var SecurityInfo: MutableMap<String, MutableMap<String, SecurityRiskItem>> = HashMap()
     var ComplianceInfo: MutableMap<String, MutableMap<String, SecurityRiskItem>> = HashMap()
     var DeepLinkInfo: MutableMap<String, MutableSet<String>>? = null
@@ -53,23 +54,22 @@ class Results {
 object OutputSecResults {
 
     private var Results = Results()
-    private var BasicInfo = BasicInfo()
 
+    private var BasicInfo = BasicInfo()
     private var DeepLinkInfo: MutableMap<String, MutableSet<String>> = HashMap()
     var AppInfo = AppInfo()
-
-
+    var ManifestRisk = ManifestRisk()
     var APIList: MutableList<HttpAPI> = ArrayList()
-
     var JsBridgeList: MutableList<JsBridgeAPI> = ArrayList()
-
     var JSList: MutableList<String> = ArrayList()
     private var vulnerabilityItems = ArrayList<VulnerabilityItem>()
+
     fun init() {
         AppInfo.appsharkTakeTime = profiler.totalRange.takes
         AppInfo.classCount = profiler.ProcessMethodStatistics.availableClasses
         AppInfo.methodCount = profiler.ProcessMethodStatistics.availableMethods
         Results.AppInfo = AppInfo
+        Results.ManifestRisk = ManifestRisk
         Results.DeepLinkInfo = DeepLinkInfo
         Results.HTTP_API = APIList
         Results.JsBridgeInfo = JsBridgeList
@@ -98,6 +98,12 @@ object OutputSecResults {
         profiler.AppInfo = AppInfo
     }
 
+    private fun insertMani() {
+        ManifestRisk.debuggable = AndroidUtils.debuggable
+        ManifestRisk.allowBackup = AndroidUtils.allowBackup
+        ManifestRisk.usesCleartextTraffic = AndroidUtils.usesCleartextTraffic
+    }
+
     private fun insertPerm() {
         Results.UsePermissions = AndroidUtils.usePermissionSet
         Results.DefinePermissions = AndroidUtils.permissionMap
@@ -111,10 +117,9 @@ object OutputSecResults {
         s.addAll(set)
     }
 
-
     private suspend fun addManifest(ctx: PreAnalyzeContext) {
         val manifestTaskQueue =
-            TaskQueue<Pair<String, VulnerabilityItem>>("manifest", getConfig().maxThread) { task, _ ->
+            TaskQueue<Pair<String, VulnerabilityItem>>("manifest", getConfig().getMaxPreprocessorThread()) { task, _ ->
                 val t = TraceTask(ctx)
                 t.addManifest(task.second, task.first)
             }
@@ -189,6 +194,7 @@ object OutputSecResults {
             Results.Profile = profiler.finishAndSaveProfilerResult()
             init()
             insertPerm()
+            insertMani()
             addManifest(ctx)
             groupResult(removeDup())
             val jsonName =
@@ -203,9 +209,9 @@ object OutputSecResults {
             uploadJsonResult("$jsonName.json", s)
         } catch (ex: Exception) {
             ex.printStackTrace()
+            Log.logErr("ex=$ex,stack=\n${ex.stackTraceToString()}")
             exitProcess(21)
         }
-
     }
 
     @Synchronized

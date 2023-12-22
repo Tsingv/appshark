@@ -3,5 +3,10 @@
   "out": "out/MicrosoftAuth2",
 //  "rules": "Gatt.json,WebView.json",
   "rulePath": "config/rules/my"
-//  "debugRule": "unZipSlip"
+//  "debugRule": "unZipSlip",
+  //output log level
+  //  "logLevel": 0,
+
+  //display the decompiled java code in the results
+  //  "javaSource": true,
 }

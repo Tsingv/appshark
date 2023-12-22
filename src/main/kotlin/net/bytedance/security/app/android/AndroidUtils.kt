@@ -41,7 +41,6 @@ import soot.jimple.infoflow.android.axml.AXmlHandler
 import soot.jimple.infoflow.android.axml.AXmlNode
 import soot.jimple.infoflow.android.axml.ApkHandler
 import soot.jimple.infoflow.android.axml.parsers.AXML20Parser
-import soot.jimple.infoflow.android.manifest.IAndroidApplication
 import soot.jimple.infoflow.android.manifest.ProcessManifest
 import soot.jimple.infoflow.android.manifest.binary.AbstractBinaryAndroidComponent
 import soot.jimple.infoflow.android.manifest.binary.BinaryAndroidApplication
@@ -126,12 +125,11 @@ object ComponentDescriptionDataSerializer : KSerializer<ComponentDescription> {
     }
 }
 
+
 object AndroidUtils {
     var apkAbsPath: String? = null
     var JavaSourceDir: String? = null
-
-    var dexToJavaProcess: Process? = null
-    var jadxAbsPath: String? = null
+    
     var resources: ARSCFileParser? = null
     var isApkParsed = false //
 
@@ -164,52 +162,90 @@ object AndroidUtils {
     var GlobalCompoXmlMap: MutableMap<String, ComponentDescription> = HashMap()
     var layoutFileParser: LayoutFileParser? = null
 
-    /**
-     *  user-defined permission
-     */
+    // user-defined permission
     var permissionMap: Map<String, String> = HashMap()
-
-
     var usePermissionSet: Set<String> = HashSet()
 
+    // App info
     var PackageName: String = ""
-
     var ApplicationName: String = ""
-
     var AppLabelName: String = ""
-
     var VersionName: String = ""
-
     var VersionCode = 0
-
     var MinSdk = 0
-
     var TargetSdk = 0
+
+    // Manifest risk
+    var debuggable: Boolean? = null
+    var allowBackup: Boolean? = null
+    var usesCleartextTraffic: Boolean? = null
     private var manifestVulnerability: ManifestVulnerability? = null
-    private fun dexToJava(apkPath: String, outPath: String) {
+    private fun dexToJava(apkPath: String, outPath: String, jadxPath: String) {
         JavaSourceDir = outPath + PLUtils.JAVA_SRC
         val thread = Runtime.getRuntime().availableProcessors() / 2
         try {
             val start = System.currentTimeMillis()
             Log.logInfo("==========>Start dex to Java")
-            val processBuilder = ProcessBuilder(
-                "$jadxAbsPath.sh",
-                jadxAbsPath,
-                apkPath,
-                JavaSourceDir, thread.toString()
+
+            val doneFile = File(JavaSourceDir, ".done")
+
+            if (doneFile.exists()) {
+                Log.logInfo("Using jadx cache")
+                return
+            }
+            JavaSourceDir?.let { File(it).deleteRecursively() }
+            val jadx = if (isWindows()) {
+                File(jadxPath, "jadx.bat").path
+            } else {
+                File(jadxPath, "jadx").path
+            }
+
+            val command = listOf(
+                jadx,
+                "--quiet",
+                "--no-imports",
+                "--show-bad-code",
+                "--no-debug-info",
+                "--output-dir", JavaSourceDir,
+                "--threads-count", thread.toString(),
+                "--export-gradle",
+                apkPath
             )
-            Log.logInfo(processBuilder.command().toString())
-            dexToJavaProcess = processBuilder.start()
-            dexToJavaProcess?.waitFor(1800, TimeUnit.SECONDS)
-            dexToJavaProcess?.destroy()
-            dexToJavaProcess?.waitFor()
+            Log.logInfo("Executing command: ${command.joinToString(" ")}")
+            val processBuilder: Process = ProcessBuilder(command)
+                .redirectOutput(ProcessBuilder.Redirect.INHERIT)
+                .redirectError(ProcessBuilder.Redirect.INHERIT)
+                .start()
+
+            val timeoutMillis = 1800000L // 1800 seconds
+            if (!processBuilder.waitFor(timeoutMillis, TimeUnit.MILLISECONDS)) {
+                processBuilder.destroyForcibly()
+                val exitCode = processBuilder.waitFor()
+                Log.logInfo("command ${command.joinToString(" ")} exit with $exitCode")
+            }
+
+            val exitCode = try {
+                processBuilder.exitValue()
+            } catch (e: IllegalThreadStateException) {
+                // Process is still running
+                processBuilder.destroyForcibly()
+                processBuilder.waitFor()
+                -1 // Use a special code to indicate failure
+            }
+
+            if (exitCode == 0) {
+                Log.logInfo("Command executed successfully.")
+                doneFile.createNewFile()
+            } else {
+                Log.logInfo("Command execution failed with exit code: $exitCode")
+            }
+
             Log.logInfo("Dex to Java Done " + (System.currentTimeMillis() - start) + "ms<==========")
         } catch (e: Exception) {
             e.printStackTrace()
         }
         Log.logInfo("write Java Source to $JavaSourceDir")
     }
-
 
     fun parseApk(apkPath: String, jadxPath: String, outPath: String, apkNameToolPath: String) {
         try {
@@ -254,8 +290,7 @@ object AndroidUtils {
         apkAbsPath = apkPath
         if (getConfig().javaSource == true) {
             Log.logDebug("Dex to java code")
-            jadxAbsPath = jadxPath
-            dexToJava(apkPath, outPath)
+            dexToJava(apkPath, outPath, jadxPath)
         }
 
         val targetAPK = File(apkAbsPath!!)
@@ -287,6 +322,7 @@ object AndroidUtils {
             }
             return
         }
+
         getAppLabelNameIfNeeded(manifest)
         usePermissionSet = manifest.permissions
         permissionMap = getDefinedPermissions(manifest.manifest)
@@ -312,10 +348,17 @@ object AndroidUtils {
         layoutFileParser = LayoutFileParser(manifest.packageName, resources)
         layoutFileParser!!.parseLayoutFileDirect(apkPath)
         parseAllComponents(manifest)
-
         this.manifestVulnerability?.check(manifest)
-        isApkParsed = true
 
+        debuggable = manifest.application.isDebuggable      // 默认false
+        allowBackup = manifest.application.isAllowBackup    // 默认true
+        usesCleartextTraffic =
+            manifest.application.isUsesCleartextTraffic ?: (TargetSdk < 28)  // API28以下默认true，否则默认false
+        Log.logDebug("debuggable $debuggable")
+        Log.logDebug("allowBackup $allowBackup")
+        Log.logDebug("usesCleartextTraffic $usesCleartextTraffic")
+
+        isApkParsed = true
     }
 
     private fun getAppLabelNameIfNeeded(manifest: ProcessManifest) {
@@ -323,15 +366,15 @@ object AndroidUtils {
         if (AppLabelName != "") {
             return
         }
-        try {
+        AppLabelName = try {
             val v = (manifest.application as BinaryAndroidApplication).aXmlNode.getAttribute("label").value as Int
             println(v)
             val r = resources!!.findResource(v) as StringResource
-            AppLabelName = r.value
+            r.value
         } catch (e: Exception) {
             e.printStackTrace()
             Log.logErr("getAppLabelNameIfNeeded error")
-            AppLabelName = "unknown"
+            "unknown"
         }
     }
 
@@ -351,6 +394,7 @@ object AndroidUtils {
                             is Int -> {
                                 protectionLevel.value
                             }
+
                             is String -> {
                                 try {
                                     (protectionLevel.value as String).toInt()
@@ -359,6 +403,7 @@ object AndroidUtils {
                                     0
                                 }
                             }
+
                             else -> {
                                 0
                             }
@@ -369,6 +414,8 @@ object AndroidUtils {
                             1 -> protection = PLUtils.LevelDanger
                             2 -> protection = PLUtils.LevelSig
                             3 -> protection = PLUtils.LevelSigOrSys
+                            4 -> protection = PLUtils.LevelInternal
+                            18 -> protection = PLUtils.LevelSigAndPri
                         }
                         tmpPermissionMap[permission] = protection
                     } else {
